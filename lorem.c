@@ -112,7 +112,6 @@ void 		my_threader(t_threadIntell *tr) {
 	while (i < 4){
 		memcpy(tr->buffer[i], &tr->map[tr->start], tr->sb.st_size / 4);
 		tr->start = (tr->sb.st_size / 4) * (i + 1);
-		tr->buffer[i][(tr->sb.st_size / 4) + 1] = 0;
 		tr->occur = i;
 		pthread_create(&thread[i], NULL, my_treater, (void*) tr);
 		usleep(100);
@@ -121,7 +120,6 @@ void 		my_threader(t_threadIntell *tr) {
 	tr->start = tr->sb.st_size / 4 * 4;
 	tr->end = tr->sb.st_size;
 	memcpy(tr->buffer[4], &tr->map[tr->start], tr->sb.st_size % 4);
-	tr->buffer[4][(tr->sb.st_size % 4) + 1] = 0;
 	tr->end = tr->start + tr->sb.st_size % 4;
 	tr->occur = 4;
 	my_treater((void*) tr);
@@ -130,6 +128,12 @@ void 		my_threader(t_threadIntell *tr) {
 		pthread_join(thread[i], NULL);
 		i++;
 	}
+	i = 0;
+	while (tr->buffer[i] != NULL) {
+		free(tr->buffer[i]);
+		i++;
+	}
+	free(tr->buffer);
 }
 
 int 		my_reader(t_data **my_data) {
@@ -146,6 +150,8 @@ int 		my_reader(t_data **my_data) {
 	if ((tr.map = mmap(0, tr.sb.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED)
 		return (-4);
 	my_threader(&tr);
+	if (munmap(tr.map, tr.sb.st_size) == -1)
+		return (-5);
 
 	return (0);
 }
