@@ -9,6 +9,7 @@
 #include 	<sys/stat.h>
 #include 	<fcntl.h>
 #include 	<string.h>
+#include 	<sys/mman.h>
 
 #define 	SIZEOFBUFFER 20000
 
@@ -24,8 +25,12 @@ typedef struct s_data
 
 typedef struct s_threadIntell {
 	t_data	**my_data;
-	int 	fd;
-	char 	buffer[SIZEOFBUFFER];
+	char 	*map;
+	int 	start;
+	int 	end;
+	struct 	stat sb;
+	char	**buffer;
+	int 	occur;
 } 			t_threadIntell;
 
 #endif 		/*!LOREM_H_*/
