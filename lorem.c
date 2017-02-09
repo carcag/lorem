@@ -1,6 +1,5 @@
 #include 	"lorem.h"
-
-int 		counter;
+#include 	"time.h"
 
 int 		pushInList(t_data **pointer, char *word) {
 	t_data 	*elem;
@@ -41,8 +40,8 @@ t_data 		*searchInList(t_data **pointer, char *word) {
 
 	tmp = *pointer;
 	while (tmp != NULL) {
-//		printf("|%s| != |%s|\n", word, tmp->word);
 		if (strcmp(tmp->word, word) == 0){
+			pthread_mutex_lock(&tmp->data_mutex);
 			return (tmp);
 		}
 		tmp = tmp->prec;
@@ -63,59 +62,91 @@ void 		clearDaList(t_data **pointer) {
 }
 
 void 		*my_treater(void *data) {
+	int 	occur;
 	int 	i;
 	int 	j;
 	int 	k;
-	int 	temp;
 	char 	*word;
 	t_data 	*tmp;
 	t_threadIntell *tr;
 
 	tr = (t_threadIntell*) data;
+	occur = tr->occur;
 	i = 0;
 	j = 0;
 	k = 0;
-	while (tr->buffer[i]) {
-		while (tr->buffer[i] == ' ' || tr->buffer[i] == '\n')
+	while (tr->buffer[occur][i]) {
+		while (tr->buffer[occur][i] == ' ' || tr->buffer[occur][i] == '\n')
 			i++;
 		j = i;
-		while (tr->buffer[i] != ' ' && tr->buffer[i] != '\n' && tr->buffer[i] != 0) 
+		while (tr->buffer[occur][i] != ' ' && tr->buffer[occur][i] != '\n' && tr->buffer[occur][i] != 0)
 			i++;
 		if ((word = malloc(sizeof(char) * (i - j) + 1)) == NULL)
 			return;
-		temp = i - j;
-		strncpy(word, &(tr->buffer[j]), temp);
-		j = i;
-		if (*tr->my_data)
-			pthread_mutex_lock(&(*tr->my_data)->data_mutex);
-		if ((tmp = searchInList(tr->my_data, word)) != NULL)
-			tmp->wordCount ++;
+		strncpy(word, &(tr->buffer[occur][j]), i - j);
+		if ((tmp = searchInList(tr->my_data, word)) != NULL) {
+			tmp->wordCount++;
+			pthread_mutex_unlock(&tmp->data_mutex);
+		}
 		else
 			pushInList(tr->my_data, word);
-		pthread_mutex_unlock(&(*tr->my_data)->data_mutex);
+		i++;
 	}
 }
 
 void 		my_threader(t_threadIntell *tr) {
-	pthread_t 	thread;
-	counter++;
-	pthread_create(&thread, NULL, my_treater, (void*) tr);
-	pthread_join(thread, NULL);
+	pthread_t 	thread[5];
+	int 		i;
+
+	i = 0;
+	if ((tr->buffer = malloc(sizeof(char*) * 6)) == NULL)
+		return;
+	while (i < 4) {
+		tr->buffer[i] = malloc(sizeof(char) * (tr->sb.st_size / 4 + 1));
+		i++;
+	} 
+	tr->buffer[i] = malloc(sizeof(char) * (tr->sb.st_size % 4 + 1));
+	tr->buffer[i+1] = NULL;
+	i = 0;
+	tr->start = 0;
+	while (i < 4){
+		memcpy(tr->buffer[i], &tr->map[tr->start], tr->sb.st_size / 4);
+		tr->start = (tr->sb.st_size / 4) * (i + 1);
+		tr->buffer[i][(tr->sb.st_size / 4) + 1] = 0;
+		tr->occur = i;
+		pthread_create(&thread[i], NULL, my_treater, (void*) tr);
+		usleep(100);
+		i++;
+	}
+	tr->start = tr->sb.st_size / 4 * 4;
+	tr->end = tr->sb.st_size;
+	memcpy(tr->buffer[4], &tr->map[tr->start], tr->sb.st_size % 4);
+	tr->buffer[4][(tr->sb.st_size % 4) + 1] = 0;
+	tr->end = tr->start + tr->sb.st_size % 4;
+	tr->occur = 4;
+	my_treater((void*) tr);
+	i = 0;
+	while (i < 4) {
+		pthread_join(thread[i], NULL);
+		i++;
+	}
 }
 
 int 		my_reader(t_data **my_data) {
 	t_threadIntell tr;
 	int 	fd;
 
+	tr.my_data = my_data;
+	if ((fd = open("gen.txt", O_RDWR)) == -1)
+		return (-1);
+	if (fstat(fd, &tr.sb) == -1) 
+		return (-2);
+	if (!S_ISREG(tr.sb.st_mode))
+		return (-3);
+	if ((tr.map = mmap(0, tr.sb.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED)
+		return (-4);
+	my_threader(&tr);
 
-	memset(tr.buffer, 0, SIZEOFBUFFER);
-	fd = open("loremIpsum", O_RDWR);
-	while (read(fd, tr.buffer, SIZEOFBUFFER) > 0) {
-		tr.fd = fd;
-		tr.my_data = my_data;
-		my_threader(&tr);
-	}
-	printf("counter >>>> %d\n", counter);
 	return (0);
 }
 
@@ -134,9 +165,11 @@ int 		my_result(t_data **data) {
 
 int 		main(int ac, char *av) {
 	t_data 	*my_data = NULL;
-
 	my_reader(&my_data);
-	my_result(&my_data);
+	if (my_result(&my_data) == -1) {
+		printf("error in my_result\n");
+		return (-1);
+	}
 	clearDaList(&my_data);
 
 	return (0);
